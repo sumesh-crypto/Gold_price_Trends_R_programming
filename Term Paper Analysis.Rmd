@@ -1,0 +1,207 @@
+---
+title: "Term Paper - Gold Price"
+author: "Sumesh S"
+date: "2025-10-16"
+output: html_document
+---
+
+## Importing the dataset
+```{r}
+df = read.csv('goldprices.csv')
+head(df)
+```
+
+```{r}
+library(dplyr) 
+library(tseries) 
+library(forecast) 
+library(ggplot2) 
+library(FinTS)
+```
+
+```{r}
+df$Date = as.Date(df$Date, format="%d-%m-%Y") 
+df = df %>% arrange(Date) 
+```
+
+```{r}
+# Convert the string "null" into the official missing value NA
+df$AdjClose[df$AdjClose == "null"] <- NA
+
+#remove rows with any NA
+df <- na.omit(df)
+```
+
+
+```{r}
+# Converting to numeric
+df$AdjClose <- as.numeric(df$AdjClose)
+```
+
+```{r}
+head(df)
+```
+
+```{r}
+summary(df)
+```
+## Converting to time series data
+
+```{r}
+start_year <- as.numeric(format(min(df$Date), "%Y"))
+start_day <- as.numeric(format(min(df$Date), "%j"))
+```
+
+```{r}
+ts_gold_price <- ts(
+  df$AdjClose, 
+  start = c(start_year, start_day), 
+  frequency = 365.25
+)
+```
+
+```{r}
+head(ts_gold_price)
+```
+## Plotting the time series data
+
+```{r}
+ts_for_plot <- zoo(df$AdjClose, df$Date)
+```
+
+
+```{r}
+autoplot(ts_for_plot) +
+  ggtitle("Gold Prices Over the Period (2000-2021)") +
+  xlab("Year") +
+  ylab("Adj Close Price")
+```
+
+## Checking Stationarity
+
+```{r}
+adf.test(ts_gold_price)
+```
+```{r}
+kpss.test(ts_gold_price)
+```
+## Return series
+
+```{r}
+ret_gold_price = diff(log(ts_gold_price))
+```
+
+
+## Stationarity tests on return series
+
+```{r}
+adf.test(ret_gold_price)
+```
+```{r}
+kpss.test(ret_gold_price)
+```
+## Plot the Partial Autocorrelation Function (PACF) -- AR Model
+
+```{r}
+pacf(ret_gold_price, 
+     main = "PACF PLOT",
+     lag.max = 36)
+```
+
+## Plot the Autocorrelation Function (ACF) -- MA Model
+
+```{r}
+acf(ret_gold_price, 
+    main = "ACF PLOT",
+    lag.max = 36)
+```
+
+## Performing ARIMA
+
+```{r}
+ar_model = Arima(ret_gold_price, order=c(1,0,0))
+ar_model
+```
+
+```{r}
+ma_model = Arima(ret_gold_price, order=c(0,0,1))
+ma_model
+```
+
+```{r}
+arma_model = Arima(ret_gold_price, order = c(1,0,1))
+summary(arma_model)
+```
+```{r}
+arima_model = auto.arima(ret_gold_price)
+summary(arima_model)
+```
+
+
+## ARCH test (Autoregressive Conditional Heteroscedasticity Test)
+
+```{r}
+library(FinTS)
+ArchTest(arima_model$residuals, lags=12)
+```
+- This is extremely small and much less than 0.05.
+
+- Conclusion: Reject H_0. We confirm that the variance (volatility) of your gold returns is not constant over time.
+
+- This result confirms the existence of volatility clustering: 
+
+Large price movements (positive or negative) are followed by more large movements, and small movements are followed by more small movements. Your ARIMA(0, 0, 0) model removed all linear correlation, and the GARCH model is now required to model the non-linear volatility.
+
+
+## GARCH
+
+```{r}
+library(rugarch)
+
+
+garch_spec = ugarchspec(
+
+  variance.model = list(model = "sGARCH", garchOrder = c(1, 1)),
+  
+ 
+  mean.model = list(armaOrder = c(0, 0), include.mean = TRUE), 
+  
+  
+  distribution.model = "std" 
+)
+
+# Fitting the model to Return series
+garch_fit <- ugarchfit(spec = garch_spec, data = ret_gold_price)
+
+
+print(garch_fit)
+```
+
+
+## Forecasting Volatality
+
+```{r}
+forecast = ugarchforecast(garch_fit, n.ahead = 21)
+plot(forecast, which = 3)
+```
+```{r}
+fc <- ugarchforecast(garch_fit, n.ahead = 21)
+sigma_fc <- sigma(fc)
+
+
+last_date <- max(df$Date)
+future_dates <- seq(last_date, by = "day", length.out = 40)
+future_trading <- future_dates[weekdays(future_dates) %in% c("Monday","Tuesday","Wednesday","Thursday","Friday")][1:21]
+
+
+plot(future_trading, sigma_fc, type="l", xlab="Date", ylab="Volatility", main="21-Day Volatility Forecast")
+```
+
+
+
+
+
+
+
+
+
