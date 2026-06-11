@@ -1,0 +1,2 @@
+# Gold_price_Trends_R_programming
+ANALYZING AND FORECASTING GOLD PRICE TRENDS IN US
